@@ -9,14 +9,16 @@ import type { PdfDocument } from '@/lib/types';
 import { revalidatePath } from 'next/cache';
 
 const PDFS_DIR = path.join(process.cwd(), 'public', 'uploads', 'pdfs');
-const METADATA_PATH = path.join(process.cwd(), 'src', 'data', 'metadata.json');
+const DATA_DIR = path.join(process.cwd(), 'data'); // New directory for metadata
+const METADATA_PATH = path.join(DATA_DIR, 'metadata.json'); // Updated metadata path
 
 // Ensure directories exist
 async function ensureDirectories() {
   try {
     await fs.mkdir(PDFS_DIR, { recursive: true });
+    await fs.mkdir(DATA_DIR, { recursive: true }); // Ensure data directory exists
   } catch (error) {
-    console.error('Failed to create PDF directory:', error);
+    console.error('Failed to create directories:', error);
   }
 }
 
@@ -30,7 +32,7 @@ const UploadPdfSchema = z.object({
 
 export async function getPdfDocuments(): Promise<PdfDocument[]> {
   try {
-    await ensureDirectories();
+    await ensureDirectories(); // Ensures DATA_DIR is created before trying to read
     const data = await fs.readFile(METADATA_PATH, 'utf-8');
     const documents = JSON.parse(data) as PdfDocument[];
     // Ensure all documents have a status and relatedPersons, default if missing
@@ -41,7 +43,7 @@ export async function getPdfDocuments(): Promise<PdfDocument[]> {
     })).sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      await fs.writeFile(METADATA_PATH, JSON.stringify([]));
+      await fs.writeFile(METADATA_PATH, JSON.stringify([])); // Create empty metadata if not found
       return [];
     }
     console.error("Failed to read PDF metadata:", error);
@@ -156,11 +158,15 @@ export async function deletePdf(id: string): Promise<{ success: boolean; message
       return { success: false, message: "Document not found." };
     }
 
-    const filePath = path.join(process.cwd(), 'public', docToDelete.path);
+    // Note: filePath is constructed assuming process.cwd() is the project root,
+    // but in standalone mode, it's the standalone app root.
+    // However, docToDelete.path is like /uploads/pdfs/file.pdf
+    // So we need to join process.cwd() with 'public' and then the relative path
+    const publicFilePath = path.join(process.cwd(), 'public', docToDelete.path);
     try {
-      await fs.unlink(filePath);
+      await fs.unlink(publicFilePath);
     } catch (fileError) {
-      console.error(`Failed to delete file ${filePath}:`, fileError);
+      console.error(`Failed to delete file ${publicFilePath}:`, fileError);
       // Don't stop if file deletion fails, still remove metadata
     }
 
