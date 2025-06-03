@@ -1,0 +1,61 @@
+[
+  {
+    "id": "783c4a26-77b0-4b8b-b563-f7bd3c5cfd33",
+    "fileName": "783c4a26-77b0-4b8b-b563-f7bd3c5cfd33-30315.pdf",
+    "originalName": "30315.pdf",
+    "week": "2025-06-02",
+    "status": "paid",
+    "uploadDate": "2025-06-02T19:53:42.864Z",
+    "path": "/uploads/pdfs/783c4a26-77b0-4b8b-b563-f7bd3c5cfd33-30315.pdf",
+    "size": 207286,
+    "relatedPersons": [
+      "Rajendra"
+    ]
+  },
+  {
+    "id": "d72166ad-2052-419e-96d5-289bb2595b7c",
+    "fileName": "d72166ad-2052-419e-96d5-289bb2595b7c-38125.pdf",
+    "originalName": "38125.pdf",
+    "week": "2025-06-02",
+    "status": "due",
+    "uploadDate": "2025-06-02T19:53:42.862Z",
+    "path": "/uploads/pdfs/d72166ad-2052-419e-96d5-289bb2595b7c-38125.pdf",
+    "size": 204176,
+    "relatedPersons": [
+      "Rajendra"
+    ]
+  },
+  {
+    "id": "f080a4df-9d61-4ba3-9552-414ee5e7aa75",
+    "fileName": "f080a4df-9d61-4ba3-9552-414ee5e7aa75-15591.pdf",
+    "originalName": "15591.pdf",
+    "week": "2025-05-19",
+    "status": "due",
+    "uploadDate": "2025-06-02T19:46:28.340Z",
+    "path": "/uploads/pdfs/f080a4df-9d61-4ba3-9552-414ee5e7aa75-15591.pdf",
+    "size": 209274,
+    "relatedPersons": []
+  },
+  {
+    "id": "d8c9992f-3330-4d5a-b01c-e03e776ebd62",
+    "fileName": "d8c9992f-3330-4d5a-b01c-e03e776ebd62-29549.pdf",
+    "originalName": "29549.pdf",
+    "week": "2025-06-09",
+    "uploadDate": "2025-06-02T19:24:09.093Z",
+    "path": "/uploads/pdfs/d8c9992f-3330-4d5a-b01c-e03e776ebd62-29549.pdf",
+    "size": 211778,
+    "status": "due",
+    "relatedPersons": []
+  },
+  {
+    "id": "7ad090cd-3293-4e12-b744-6329460416e2",
+    "fileName": "7ad090cd-3293-4e12-b744-6329460416e2-19293.pdf",
+    "originalName": "19293.pdf",
+    "week": "2025-06-09",
+    "uploadDate": "2025-06-02T19:24:09.089Z",
+    "path": "/uploads/pdfs/7ad090cd-3293-4e12-b744-6329460416e2-19293.pdf",
+    "size": 201480,
+    "status": "due",
+    "relatedPersons": []
+  }
+]
