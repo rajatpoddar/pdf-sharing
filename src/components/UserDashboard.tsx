@@ -5,7 +5,6 @@ import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation'; // Import useRouter
 import type { PdfDocument } from '@/lib/types';
 import { PdfCard } from '@/components/PdfCard';
-import { SuggestedProjects } from '@/components/SuggestedProjects';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
@@ -31,7 +30,6 @@ export function UserDashboard({ initialDocuments }: UserDashboardProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilterValue, setSelectedFilterValue] = useState<string>('all');
   const [documents, setDocuments] = useState<PdfDocument[]>(initialDocuments);
-  const [triggerAiUpdate, setTriggerAiUpdate] = useState(0);
   const router = useRouter(); // Initialize router
 
   useEffect(() => {
@@ -41,9 +39,6 @@ export function UserDashboard({ initialDocuments }: UserDashboardProps) {
   useEffect(() => {
     if (searchTerm.toLowerCase().trim() === 'admin') {
       router.push('/admin');
-      // Optionally clear search term after redirect,
-      // but this might be jarring if the user navigates back.
-      // setSearchTerm(''); 
     }
   }, [searchTerm, router]);
 
@@ -55,39 +50,39 @@ export function UserDashboard({ initialDocuments }: UserDashboardProps) {
       let optionValue: string;
       let display: string;
       let sortDate: Date;
-      const docUploadDate = parseISO(doc.uploadDate); // Ensure this is a Date object
+      const docUploadDate = parseISO(doc.uploadDate); 
 
-      if (/^\d{4}-\d{2}-\d{2}$/.test(doc.week)) { // Is 'yyyy-MM-dd'
+      if (/^\d{4}-\d{2}-\d{2}$/.test(doc.week)) { 
         optionValue = doc.week;
         try {
           sortDate = parseISO(doc.week);
-          display = getDisplayDateRangeForWeek(doc.week, sortDate); // reference date can be sortDate itself
+          display = getDisplayDateRangeForWeek(doc.week, sortDate); 
         } catch (e) {
-          display = doc.week; // Fallback display
-          sortDate = docUploadDate; // Fallback sort date
+          display = doc.week; 
+          sortDate = docUploadDate; 
           console.error("Error processing yyyy-MM-dd week for filter:", e);
         }
-      } else if (doc.week.match(/^Week (\d+)$/)) { // Is 'Week N'
+      } else if (doc.week.match(/^Week (\d+)$/)) { 
         const year = dfGetYear(docUploadDate);
-        optionValue = `${doc.week}::${year}`; // Unique key for Week N of a specific year
+        optionValue = `${doc.week}::${year}`; 
         try {
           display = getDisplayDateRangeForWeek(doc.week, docUploadDate);
-          const dateParts = display.split(' - ')[0].split('/'); // dd/MM/yyyy
+          const dateParts = display.split(' - ')[0].split('/'); 
           sortDate = new Date(parseInt(dateParts[2]), parseInt(dateParts[1]) - 1, parseInt(dateParts[0]));
         } catch (e) {
-          display = `${doc.week} (${year})`; // Fallback display
-          sortDate = docUploadDate; // Fallback sort date
+          display = `${doc.week} (${year})`; 
+          sortDate = docUploadDate; 
           console.error("Error processing Week N for filter:", e);
         }
-      } else { // Is "Current Week", "Last Week", "Next Week"
+      } else { 
         optionValue = doc.week;
         try {
-          display = getDisplayDateRangeForWeek(doc.week, new Date()); // Use current date for relative weeks
-          const dateParts = display.split(' - ')[0].split('/'); // dd/MM/yyyy
+          display = getDisplayDateRangeForWeek(doc.week, new Date()); 
+          const dateParts = display.split(' - ')[0].split('/'); 
           sortDate = new Date(parseInt(dateParts[2]), parseInt(dateParts[1]) - 1, parseInt(dateParts[0]));
         } catch (e) {
-          display = doc.week; // Fallback display
-          sortDate = new Date(); // Fallback sort date
+          display = doc.week; 
+          sortDate = new Date(); 
           console.error("Error processing relative week for filter:", e);
         }
       }
@@ -116,30 +111,28 @@ export function UserDashboard({ initialDocuments }: UserDashboardProps) {
   }, [searchTerm, selectedFilterValue]);
 
   const filteredDocuments = useMemo(() => {
-    // If no active search or filter, don't filter, show all or none based on other logic
-    // The original UserDashboard logic showed a prompt if no search/filter was active
-    // To show all documents if nothing is active, this condition might need changing
-    // For now, keeping it as is: filtering only occurs if there *is* an active filter/search.
     if (!hasActiveSearchOrFilter) {
-      return []; // Or return 'documents' if you want to show all when no filter is active
+      return []; 
     }
     return documents.filter(doc => {
+      // Assuming "work code" could be in originalName, fileName, or a new field if you add one.
+      // For now, let's assume "work code" refers to a part of the originalName or fileName.
       const matchesSearch = doc.originalName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                             doc.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            (doc.relatedPersons && doc.relatedPersons.some(p => p.toLowerCase().includes(searchTerm.toLowerCase())));
+                            (doc.relatedPersons && doc.relatedPersons.some(p => p.toLowerCase().includes(searchTerm.toLowerCase()))); // Kept relatedPersons search for now, can be removed if "work code" fully replaces it.
 
 
       let matchesWeek = selectedFilterValue === 'all';
       if (selectedFilterValue !== 'all') {
         const docUploadDate = parseISO(doc.uploadDate);
 
-        if (selectedFilterValue.match(/^\d{4}-\d{2}-\d{2}$/)) { // Filter is 'yyyy-MM-dd'
+        if (selectedFilterValue.match(/^\d{4}-\d{2}-\d{2}$/)) { 
           matchesWeek = doc.week === selectedFilterValue;
-        } else if (selectedFilterValue.includes('::')) { // Filter is 'Week N::YYYY'
+        } else if (selectedFilterValue.includes('::')) { 
           const [filterWeekId, filterYearStr] = selectedFilterValue.split('::');
           const docYear = dfGetYear(docUploadDate);
           matchesWeek = doc.week === filterWeekId && docYear === parseInt(filterYearStr);
-        } else { // Filter is 'Current Week', 'Last Week', 'Next Week' (legacy or still desired)
+        } else { 
             if (doc.week === selectedFilterValue) {
                 matchesWeek = true;
             } else if (/^\d{4}-\d{2}-\d{2}$/.test(doc.week)) { 
@@ -166,7 +159,6 @@ export function UserDashboard({ initialDocuments }: UserDashboardProps) {
         downloadHistory = downloadHistory.slice(0, MAX_HISTORY_LENGTH);
       }
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(downloadHistory));
-      setTriggerAiUpdate(prev => prev + 1);
     }
   };
 
@@ -190,11 +182,11 @@ export function UserDashboard({ initialDocuments }: UserDashboardProps) {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input
                   type="text"
-                  placeholder="Search by name, related person, or type 'admin'..."
+                  placeholder="Search by work code or type 'admin'..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10 w-full"
-                  aria-label="Search projects by name or related person, or type admin to login"
+                  aria-label="Search projects by work code or type admin to login"
                 />
               </div>
               <Select value={selectedFilterValue} onValueChange={setSelectedFilterValue}>
@@ -223,7 +215,6 @@ export function UserDashboard({ initialDocuments }: UserDashboardProps) {
         </AccordionItem>
       </Accordion>
 
-      {hasActiveSearchOrFilter && <SuggestedProjects allPdfs={documents} triggerUpdate={triggerAiUpdate} />}
 
       {!hasActiveSearchOrFilter ? (
         <div className="text-center py-10 bg-card rounded-lg shadow">

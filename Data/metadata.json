@@ -1,5 +1,62 @@
 [
   {
+    "id": "aab83efa-6a31-4246-8448-c32dceacb39a",
+    "fileName": "dc6041f2-7400-4608-9f8b-fe783a6b9cec-3560.pdf",
+    "originalName": "3560.pdf",
+    "week": "2025-05-26",
+    "status": "paid",
+    "uploadDate": "2025-06-03T11:16:50.873Z",
+    "path": "/uploads/pdfs/dc6041f2-7400-4608-9f8b-fe783a6b9cec-3560.pdf",
+    "size": 207100,
+    "relatedPersons": []
+  },
+  {
+    "id": "c2349b3e-ffdc-43c9-9ac4-ab7979e42f82",
+    "fileName": "7410d18f-3056-4aa9-873d-6e17f45890a4-3513.pdf",
+    "originalName": "3513.pdf",
+    "week": "2025-05-26",
+    "status": "paid",
+    "uploadDate": "2025-06-03T11:16:50.872Z",
+    "path": "/uploads/pdfs/7410d18f-3056-4aa9-873d-6e17f45890a4-3513.pdf",
+    "size": 208912,
+    "relatedPersons": []
+  },
+  {
+    "id": "02ae34a6-22cf-45c5-839e-4fe425e08f05",
+    "fileName": "d463eecf-d14b-45d3-82a2-80c5b6627e42-4530.pdf",
+    "originalName": "4530.pdf",
+    "week": "2025-05-26",
+    "status": "paid",
+    "uploadDate": "2025-06-03T11:16:50.870Z",
+    "path": "/uploads/pdfs/d463eecf-d14b-45d3-82a2-80c5b6627e42-4530.pdf",
+    "size": 207784,
+    "relatedPersons": []
+  },
+  {
+    "id": "c40d7a62-2702-4a3e-b4b1-366f48cbb8a9",
+    "fileName": "1f41a9c8-62c5-4e33-ba81-832309560c1a-68015-2.pdf",
+    "originalName": "68015-2.pdf",
+    "week": "2025-05-26",
+    "status": "paid",
+    "uploadDate": "2025-06-03T11:16:50.868Z",
+    "path": "/uploads/pdfs/1f41a9c8-62c5-4e33-ba81-832309560c1a-68015-2.pdf",
+    "size": 209438,
+    "relatedPersons": []
+  },
+  {
+    "id": "dc9032c2-f6e1-4363-b5a6-b5c174a33c33",
+    "fileName": "c7cd319f-ab51-44a0-8e03-e9e5419abd73-2972.pdf",
+    "originalName": "2972.pdf",
+    "week": "2025-05-26",
+    "status": "paid",
+    "uploadDate": "2025-06-03T11:07:34.523Z",
+    "path": "/uploads/pdfs/c7cd319f-ab51-44a0-8e03-e9e5419abd73-2972.pdf",
+    "size": 209411,
+    "relatedPersons": [
+      "bfg"
+    ]
+  },
+  {
     "id": "783c4a26-77b0-4b8b-b563-f7bd3c5cfd33",
     "fileName": "783c4a26-77b0-4b8b-b563-f7bd3c5cfd33-30315.pdf",
     "originalName": "30315.pdf",

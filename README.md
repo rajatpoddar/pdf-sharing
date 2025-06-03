@@ -1,7 +1,7 @@
 
 # Weekly Projects Hub
 
-Weekly Projects Hub is a Next.js application designed for managing and distributing weekly project PDF documents. It features an admin panel for uploading and managing PDFs, including setting their download status (paid/due) and associating related persons. Users can browse, search, filter, and download available project PDFs. The app also includes AI-powered project suggestions based on download history.
+Weekly Projects Hub is a Next.js application designed for managing and distributing weekly project PDF documents. It features an admin panel for uploading and managing PDFs, including setting their download status (paid/due) and associating related persons. Users can browse, search, filter, and download available project PDFs.
 
 ## Features
 
@@ -11,7 +11,6 @@ Weekly Projects Hub is a Next.js application designed for managing and distribut
 *   **User Dashboard**: Search, filter, and download PDFs.
 *   **Admin Panel**: Secure section for managing all PDF uploads and settings.
     *   Access by typing "admin" in the user dashboard search bar.
-*   **AI-Powered Suggestions**: Recommends projects based on user download history.
 *   **Responsive Design**: Adapts to different screen sizes, with a mobile-friendly interface.
 *   **Light/Dark Mode**: Theme toggle for user preference.
 *   **Dockerized Deployment**: Ready for deployment using Docker.
@@ -19,8 +18,7 @@ Weekly Projects Hub is a Next.js application designed for managing and distribut
 ## Tech Stack
 
 *   **Frontend**: Next.js (App Router), React, TypeScript
-*   **UI**: ShadCN UI Components, Tailwind CSS
-*   **Generative AI**: Firebase Genkit (for project suggestions)
+*   **UI**: ShadCN UI Components
 *   **Styling**: Tailwind CSS, CSS Variables
 *   **Deployment**: Docker
 
@@ -32,14 +30,13 @@ Weekly Projects Hub is a Next.js application designed for managing and distribut
 │   └── uploads/
 │       └── pdfs/
 ├── src/
-│   ├── ai/                # Genkit AI flows and configuration
 │   ├── app/               # Next.js App Router (pages, layouts)
 │   ├── components/        # React components (UI, specific features)
 │   ├── hooks/             # Custom React hooks
 │   ├── lib/               # Utility functions, server actions, types
 │   └── ...
 ├── Dockerfile             # Docker build instructions
-├── next.config.js         # Next.js configuration
+├── next.config.ts         # Next.js configuration (ensure .ts is used)
 ├── package.json           # Project dependencies and scripts
 └── ...
 ```
@@ -67,22 +64,13 @@ Weekly Projects Hub is a Next.js application designed for managing and distribut
     ```
 
 3.  **Environment Variables:**
-    *   This project uses Genkit for AI features, which might require API keys for certain models (e.g., Google AI). If you're using models that require keys, create a `.env` file in the root of your project and add your API keys:
-        ```env
-        GOOGLE_API_KEY=your_google_api_key_here
-        ```
-    *   The default admin password is hardcoded in `src/lib/config.ts`. For actual deployment, consider managing this via environment variables.
+    *   The default admin password is hardcoded in `src/lib/config.ts`. For actual deployment, consider managing this via environment variables passed to your Docker container.
 
 4.  **Run the development server:**
     ```bash
     npm run dev
     ```
     The application will be available at `http://localhost:9002`.
-
-    To run the Genkit development server (for testing AI flows locally):
-    ```bash
-    npm run genkit:dev
-    ```
 
 ### Admin Access
 
@@ -95,7 +83,7 @@ To create an optimized production build:
 ```bash
 npm run build
 ```
-This will generate a production-ready application in the `.next` directory, and a standalone output in `.next/standalone/` due to the `output: 'standalone'` configuration in `next.config.js`.
+This will generate a production-ready application in the `.next` directory, and a standalone output in `.next/standalone/` due to the `output: 'standalone'` configuration in `next.config.ts`.
 
 ## Deployment with Docker (Example: Synology NAS)
 
@@ -119,6 +107,7 @@ Create folders on your NAS to store persistent data:
 If you have existing data:
 *   Copy `data/metadata.json` from your project to the NAS metadata folder.
 *   Copy PDFs from `public/uploads/pdfs/` to the NAS PDF uploads folder.
+*   If starting fresh, the application will attempt to create an empty `metadata.json` if the `data` volume is empty and permissions allow.
 
 ### Step 2: Build the Docker Image
 
@@ -174,7 +163,6 @@ Open your browser and navigate to:
 ## Scripts
 
 *   `npm run dev`: Starts the Next.js development server with Turbopack on port 9002.
-*   `npm run genkit:dev`: Starts the Genkit development flow server.
 *   `npm run build`: Builds the application for production.
 *   `npm run start`: Starts the Next.js production server (after building).
 *   `npm run lint`: Runs Next.js ESLint.
@@ -183,4 +171,3 @@ Open your browser and navigate to:
 ## Contributing
 
 Feel free to open issues or submit pull requests if you have suggestions for improvements.
-```

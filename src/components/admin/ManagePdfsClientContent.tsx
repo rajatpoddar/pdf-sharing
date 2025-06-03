@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState, useTransition, useMemo } from 'react';
-import { getPdfDocuments, deletePdf, togglePdfStatus, bulkUpdatePdfStatus } from '@/lib/pdf-actions';
+import { getPdfDocuments, deletePdf, togglePdfStatus, bulkUpdatePdfStatus, bulkDeletePdfs } from '@/lib/pdf-actions';
 import type { PdfDocument } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,9 +38,11 @@ export function ManagePdfsClientContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
-  const [isPending, startTransition] = useTransition();
+  const [isTogglingStatusPending, startToggleStatusTransition] = useTransition();
+  const [isDeletingPending, startDeleteTransition] = useTransition();
   const [isBulkUpdating, startBulkUpdateTransition] = useTransition();
-  const [isTogglingStatus, setIsTogglingStatus] = useState<string | null>(null);
+  const [isBulkDeleting, startBulkDeleteTransition] = useTransition();
+  const [isTogglingStatus, setIsTogglingStatus] = useState<string | null>(null); // Tracks individual status toggle
   const [docToDelete, setDocToDelete] = useState<PdfDocument | null>(null);
 
   // Filter states
@@ -50,6 +52,7 @@ export function ManagePdfsClientContent() {
   const [filterRelatedPerson, setFilterRelatedPerson] = useState('');
   
   const [bulkActionConfirmation, setBulkActionConfirmation] = useState<{ action: 'lock' | 'unlock'; count: number } | null>(null);
+  const [bulkDeleteConfirmation, setBulkDeleteConfirmation] = useState<{ count: number } | null>(null);
 
 
   const fetchDocuments = async () => {
@@ -206,11 +209,11 @@ export function ManagePdfsClientContent() {
     }
   };
 
-  const handleDeleteConfirm = (doc: PdfDocument) => setDocToDelete(doc);
+  const handleDeleteRequest = (doc: PdfDocument) => setDocToDelete(doc);
 
-  const handleDelete = async () => {
+  const handleDeleteConfirm = async () => {
     if (!docToDelete) return;
-    startTransition(async () => {
+    startDeleteTransition(async () => {
       const result = await deletePdf(docToDelete.id);
       if (result.success) {
         toast({ title: "Deleted!", description: `${docToDelete.originalName} has been deleted.` });
@@ -224,7 +227,7 @@ export function ManagePdfsClientContent() {
 
   const handleToggleStatus = async (docId: string) => {
     setIsTogglingStatus(docId);
-    startTransition(async () => {
+    startToggleStatusTransition(async () => {
       const result = await togglePdfStatus(docId);
       if (result.success && result.newStatus) {
         toast({ title: "Status Updated!", description: `Status for document changed to ${result.newStatus}.` });
@@ -238,7 +241,7 @@ export function ManagePdfsClientContent() {
     });
   };
 
-  const handleBulkAction = (action: 'lock' | 'unlock') => {
+  const handleBulkStatusUpdateRequest = (action: 'lock' | 'unlock') => {
     const count = filteredDocuments.filter(doc => doc.status !== (action === 'lock' ? 'due' : 'paid')).length;
     if (count === 0) {
         toast({ title: "No Action Needed", description: `All filtered documents are already ${action === 'lock' ? 'due (locked)' : 'paid (unlocked)'}.`});
@@ -247,7 +250,7 @@ export function ManagePdfsClientContent() {
     setBulkActionConfirmation({ action, count });
   };
 
-  const confirmBulkUpdate = async () => {
+  const confirmBulkStatusUpdate = async () => {
     if (!bulkActionConfirmation) return;
     const newStatus = bulkActionConfirmation.action === 'lock' ? 'due' : 'paid';
     const idsToUpdate = filteredDocuments
@@ -273,6 +276,41 @@ export function ManagePdfsClientContent() {
       setBulkActionConfirmation(null);
     });
   };
+
+  const handleBulkDeleteRequest = () => {
+    if (filteredDocuments.length === 0) {
+        toast({ title: "No Documents Filtered", description: "There are no documents currently matching your filters to delete."});
+        return;
+    }
+    setBulkDeleteConfirmation({ count: filteredDocuments.length });
+  };
+
+  const confirmBulkDelete = async () => {
+    if (!bulkDeleteConfirmation) return;
+    const idsToDelete = filteredDocuments.map(doc => doc.id);
+
+    if (idsToDelete.length === 0) {
+      setBulkDeleteConfirmation(null);
+      return;
+    }
+
+    startBulkDeleteTransition(async () => {
+      const result = await bulkDeletePdfs(idsToDelete);
+      if (result.success) {
+        toast({ 
+          title: "Bulk Delete Successful!", 
+          description: `${result.metadataRemovedCount} document(s) removed. ${result.filesActuallyDeletedCount} file(s) deleted. ${result.fileDeletionErrors.length > 0 ? `${result.fileDeletionErrors.length} file deletion error(s).` : ''}`
+        });
+        setDocuments(prevDocs => 
+          prevDocs.filter(d => !idsToDelete.includes(d.id))
+        );
+      } else {
+        toast({ title: "Bulk Delete Failed", description: result.message, variant: "destructive" });
+      }
+      setBulkDeleteConfirmation(null);
+    });
+  };
+
 
   if (isLoading) {
     return (
@@ -361,22 +399,32 @@ export function ManagePdfsClientContent() {
                 <CardContent className="p-0 flex flex-wrap gap-2">
                   <Button 
                     size="sm" 
-                    onClick={() => handleBulkAction('lock')} 
-                    disabled={isBulkUpdating || filteredDocuments.every(doc => doc.status === 'due')}
-                    variant="destructive"
+                    onClick={() => handleBulkStatusUpdateRequest('lock')} 
+                    disabled={isBulkUpdating || isBulkDeleting || filteredDocuments.every(doc => doc.status === 'due')}
+                    variant="outline"
+                    className="border-destructive text-destructive hover:bg-destructive/10"
                   >
                     {isBulkUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Lock className="mr-2 h-4 w-4" />}
                      Lock All Filtered
                   </Button>
                   <Button 
                     size="sm" 
-                    onClick={() => handleBulkAction('unlock')} 
-                    disabled={isBulkUpdating || filteredDocuments.every(doc => doc.status === 'paid')}
-                    variant="default"
-                    className="bg-green-600 hover:bg-green-700 text-white dark:text-foreground"
+                    onClick={() => handleBulkStatusUpdateRequest('unlock')} 
+                    disabled={isBulkUpdating || isBulkDeleting || filteredDocuments.every(doc => doc.status === 'paid')}
+                    variant="outline"
+                    className="border-green-600 text-green-600 hover:bg-green-600/10 dark:text-green-500 dark:border-green-500 dark:hover:bg-green-500/10"
                   >
                     {isBulkUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Unlock className="mr-2 h-4 w-4" />}
                      Unlock All Filtered
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleBulkDeleteRequest}
+                    disabled={isBulkDeleting || isBulkUpdating || filteredDocuments.length === 0}
+                    variant="destructive"
+                  >
+                    {isBulkDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                    Delete All Filtered
                   </Button>
                 </CardContent>
               </Card>
@@ -441,19 +489,19 @@ export function ManagePdfsClientContent() {
                               size="icon" 
                               onClick={() => handleToggleStatus(doc.id)} 
                               title={doc.status === 'paid' ? 'Lock (Set to Due)' : 'Unlock (Set to Paid)'}
-                              disabled={isTogglingStatus === doc.id || isPending || isBulkUpdating}
+                              disabled={isTogglingStatus === doc.id || isTogglingStatusPending || isBulkUpdating || isBulkDeleting}
                               className="transition-colors"
                           >
-                            {isTogglingStatus === doc.id ? <Loader2 className="h-4 w-4 animate-spin" /> : (doc.status === 'paid' ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4 text-green-600" />)}
+                            {(isTogglingStatus === doc.id && isTogglingStatusPending) ? <Loader2 className="h-4 w-4 animate-spin" /> : (doc.status === 'paid' ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4 text-green-600" />)}
                           </Button>
-                          <Button variant="outline" size="icon" onClick={() => handleDownload(doc.path, doc.originalName)} title="Download" disabled={isBulkUpdating} className="transition-colors">
+                          <Button variant="outline" size="icon" onClick={() => handleDownload(doc.path, doc.originalName)} title="Download" disabled={isBulkUpdating || isBulkDeleting} className="transition-colors">
                             <Download className="h-4 w-4" />
                           </Button>
-                          <Button variant="outline" size="icon" onClick={() => handleShare(doc.path, doc.originalName)} title="Share File" disabled={isBulkUpdating} className="transition-colors">
+                          <Button variant="outline" size="icon" onClick={() => handleShare(doc.path, doc.originalName)} title="Share File" disabled={isBulkUpdating || isBulkDeleting} className="transition-colors">
                             <Send className="h-4 w-4" />
                           </Button>
-                          <Button variant="destructive" size="icon" onClick={() => handleDeleteConfirm(doc)} title="Delete" disabled={isPending || isBulkUpdating} className="transition-colors">
-                              <Trash2 className="h-4 w-4" />
+                          <Button variant="destructive" size="icon" onClick={() => handleDeleteRequest(doc)} title="Delete" disabled={isDeletingPending || isBulkUpdating || isBulkDeleting} className="transition-colors">
+                              {(isDeletingPending && docToDelete?.id === doc.id) ? <Loader2 className="h-4 w-4 animate-spin" /> :<Trash2 className="h-4 w-4" />}
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -499,22 +547,22 @@ export function ManagePdfsClientContent() {
                                   size="sm" 
                                   onClick={() => handleToggleStatus(doc.id)} 
                                   title={doc.status === 'paid' ? 'Lock (Set to Due)' : 'Unlock (Set to Paid)'}
-                                  disabled={isTogglingStatus === doc.id || isPending || isBulkUpdating}
+                                  disabled={isTogglingStatus === doc.id || isTogglingStatusPending || isBulkUpdating || isBulkDeleting}
                                   className="flex-grow sm:flex-grow-0"
                               >
-                                  {isTogglingStatus === doc.id ? <Loader2 className="h-4 w-4 animate-spin" /> : (doc.status === 'paid' ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4 text-green-600" />)}
+                                  {(isTogglingStatus === doc.id && isTogglingStatusPending) ? <Loader2 className="h-4 w-4 animate-spin" /> : (doc.status === 'paid' ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4 text-green-600" />)}
                                   <span className="ml-2 sm:inline">{doc.status === 'paid' ? 'Set Due' : 'Set Paid'}</span>
                               </Button>
-                              <Button variant="outline" size="sm" onClick={() => handleDownload(doc.path, doc.originalName)} title="Download" disabled={isBulkUpdating} className="flex-grow sm:flex-grow-0">
+                              <Button variant="outline" size="sm" onClick={() => handleDownload(doc.path, doc.originalName)} title="Download" disabled={isBulkUpdating || isBulkDeleting} className="flex-grow sm:flex-grow-0">
                                   <Download className="h-4 w-4" />
                                   <span className="ml-2 sm:inline">Download</span>
                               </Button>
-                              <Button variant="outline" size="sm" onClick={() => handleShare(doc.path, doc.originalName)} title="Share File" disabled={isBulkUpdating} className="flex-grow sm:flex-grow-0">
+                              <Button variant="outline" size="sm" onClick={() => handleShare(doc.path, doc.originalName)} title="Share File" disabled={isBulkUpdating || isBulkDeleting} className="flex-grow sm:flex-grow-0">
                                   <Send className="h-4 w-4" />
                                   <span className="ml-2 sm:inline">Share</span>
                               </Button>
-                              <Button variant="destructive" size="sm" onClick={() => handleDeleteConfirm(doc)} title="Delete" disabled={isPending || isBulkUpdating} className="flex-grow sm:flex-grow-0">
-                                  <Trash2 className="h-4 w-4" />
+                              <Button variant="destructive" size="sm" onClick={() => handleDeleteRequest(doc)} title="Delete" disabled={isDeletingPending || isBulkUpdating || isBulkDeleting} className="flex-grow sm:flex-grow-0">
+                                  {(isDeletingPending && docToDelete?.id === doc.id) ? <Loader2 className="h-4 w-4 animate-spin" /> :<Trash2 className="h-4 w-4" />}
                                   <span className="ml-2 sm:inline">Delete</span>
                               </Button>
                           </CardFooter>
@@ -536,9 +584,9 @@ export function ManagePdfsClientContent() {
                   </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                  <AlertDialogCancel onClick={() => setDocToDelete(null)} disabled={isPending || isBulkUpdating}>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDelete} disabled={isPending || isBulkUpdating} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
-                      {(isPending && !isBulkUpdating) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  <AlertDialogCancel onClick={() => setDocToDelete(null)} disabled={isDeletingPending || isBulkUpdating || isBulkDeleting}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleDeleteConfirm} disabled={isDeletingPending || isBulkUpdating || isBulkDeleting} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+                      {(isDeletingPending && docToDelete?.id ) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                       Delete
                   </AlertDialogAction>
                   </AlertDialogFooter>
@@ -550,20 +598,44 @@ export function ManagePdfsClientContent() {
         <AlertDialog open={!!bulkActionConfirmation} onOpenChange={(open) => !open && setBulkActionConfirmation(null)}>
             <AlertDialogContent>
                 <AlertDialogHeader>
-                    <AlertDialogTitle>Confirm Bulk Action</AlertDialogTitle>
+                    <AlertDialogTitle>Confirm Bulk Status Update</AlertDialogTitle>
                     <AlertDialogDescription>
                         Are you sure you want to {bulkActionConfirmation.action} {bulkActionConfirmation.count} document(s)? This will change their status to '{bulkActionConfirmation.action === 'lock' ? 'due' : 'paid'}'.
                     </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                    <AlertDialogCancel onClick={() => setBulkActionConfirmation(null)} disabled={isBulkUpdating}>Cancel</AlertDialogCancel>
+                    <AlertDialogCancel onClick={() => setBulkActionConfirmation(null)} disabled={isBulkUpdating || isBulkDeleting}>Cancel</AlertDialogCancel>
                     <AlertDialogAction 
-                        onClick={confirmBulkUpdate} 
-                        disabled={isBulkUpdating} 
+                        onClick={confirmBulkStatusUpdate} 
+                        disabled={isBulkUpdating || isBulkDeleting} 
                         className={cn(bulkActionConfirmation.action === 'lock' ? "bg-destructive hover:bg-destructive/90 text-destructive-foreground" : "bg-green-600 hover:bg-green-700 text-white dark:text-foreground")}
                     >
                         {isBulkUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                         Confirm {bulkActionConfirmation.action === 'lock' ? 'Lock' : 'Unlock'}
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {bulkDeleteConfirmation && (
+        <AlertDialog open={!!bulkDeleteConfirmation} onOpenChange={(open) => !open && setBulkDeleteConfirmation(null)}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Confirm Bulk Delete</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        Are you sure you want to permanently delete {bulkDeleteConfirmation.count} document(s)? This action cannot be undone and will remove the files and their records.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel onClick={() => setBulkDeleteConfirmation(null)} disabled={isBulkDeleting || isBulkUpdating}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction 
+                        onClick={confirmBulkDelete} 
+                        disabled={isBulkDeleting || isBulkUpdating} 
+                        className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                    >
+                        {isBulkDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Confirm Delete
                     </AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>

@@ -20,6 +20,9 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  serverActions: {
+    bodySizeLimit: '12mb', // Increase limit for PDF uploads
+  },
 };
 
 export default nextConfig;
