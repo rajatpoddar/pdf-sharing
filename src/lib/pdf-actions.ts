@@ -66,6 +66,7 @@ export async function uploadPdf(prevState: any, formData: FormData): Promise<{ m
         message: "Validation failed.",
         success: false,
         errors: validatedFields.error.flatten().fieldErrors,
+        individualResults: [] // Ensure consistent shape
       };
     }
 
@@ -77,11 +78,11 @@ export async function uploadPdf(prevState: any, formData: FormData): Promise<{ m
       : [];
 
     if (!files || files.length === 0 || files.every(f => f.size === 0)) {
-      return { message: "No files uploaded or files are empty.", success: false };
+      return { message: "No files uploaded or files are empty.", success: false, errors: null, individualResults: [] };
     }
 
     if (files.length > 20) {
-      return { message: "Cannot upload more than 20 files at a time.", success: false };
+      return { message: "Cannot upload more than 20 files at a time.", success: false, errors: null, individualResults: [] };
     }
 
     const allDocuments = await getPdfDocuments();
@@ -133,18 +134,26 @@ export async function uploadPdf(prevState: any, formData: FormData): Promise<{ m
 
 
     if (files.length === 1) {
-        return { message: individualResults[0].message, success: individualResults[0].success };
+        // For single file, ensure 'errors' is present even if null for consistency
+        return { message: individualResults[0].message, success: individualResults[0].success, errors: null, individualResults: [] };
     } else {
         return { 
             message: allSuccessful ? "All files processed successfully!" : "Some files could not be uploaded.", 
             success: allSuccessful, 
+            errors: null, // Ensure consistent shape
             individualResults 
         };
     }
 
   } catch (error) {
     console.error("Upload failed:", error);
-    return { message: `Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`, success: false };
+    // Ensure the returned object shape is consistent with initialState
+    return { 
+        message: `Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 
+        success: false,
+        errors: null,
+        individualResults: [] 
+    };
   }
 }
 
@@ -158,16 +167,11 @@ export async function deletePdf(id: string): Promise<{ success: boolean; message
       return { success: false, message: "Document not found." };
     }
 
-    // Note: filePath is constructed assuming process.cwd() is the project root,
-    // but in standalone mode, it's the standalone app root.
-    // However, docToDelete.path is like /uploads/pdfs/file.pdf
-    // So we need to join process.cwd() with 'public' and then the relative path
     const publicFilePath = path.join(process.cwd(), 'public', docToDelete.path);
     try {
       await fs.unlink(publicFilePath);
     } catch (fileError) {
       console.error(`Failed to delete file ${publicFilePath}:`, fileError);
-      // Don't stop if file deletion fails, still remove metadata
     }
 
     const updatedDocuments = documents.filter(doc => doc.id !== id);
@@ -244,3 +248,4 @@ export async function bulkUpdatePdfStatus(ids: string[], newStatus: 'paid' | 'du
     return { success: false, message: "Failed to bulk update document statuses.", updatedCount: 0 };
   }
 }
+
