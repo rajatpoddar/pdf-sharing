@@ -8,244 +8,249 @@ import { v4 as uuidv4 } from 'uuid';
 import type { PdfDocument } from '@/lib/types';
 import { revalidatePath } from 'next/cache';
 
+const DATA_DIR = path.join(process.cwd(), 'data');
+const METADATA_PATH = path.join(DATA_DIR, 'metadata.json');
 const PDFS_DIR = path.join(process.cwd(), 'public', 'uploads', 'pdfs');
-const DATA_DIR = path.join(process.cwd(), 'data'); // New directory for metadata
-const METADATA_PATH = path.join(DATA_DIR, 'metadata.json'); // Updated metadata path
 
-// Ensure directories exist
-async function ensureDirectories() {
+// Robust directory/file access functions
+async function ensureDataDirectoryExists() {
+  try {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+  } catch (error) {
+    const errorMessage = `Critical error: Failed to create or access data directory at ${DATA_DIR}. This is required for metadata.json. Please check permissions for the mapped Docker volume. Original error: ${(error as Error).message}`;
+    console.error(errorMessage, error);
+    throw new Error(errorMessage); // Re-throw to halt operations that depend on this
+  }
+}
+
+async function ensureUploadsDirectoryExists() {
   try {
     await fs.mkdir(PDFS_DIR, { recursive: true });
-    await fs.mkdir(DATA_DIR, { recursive: true }); // Ensure data directory exists
   } catch (error) {
-    console.error('Failed to create directories:', error);
+    const errorMessage = `Critical error: Failed to create or access PDF uploads directory at ${PDFS_DIR}. Please check permissions for the mapped Docker volume. Original error: ${(error as Error).message}`;
+    console.error(errorMessage, error);
+    throw new Error(errorMessage); // Re-throw to halt operations that depend on this
   }
 }
-
-ensureDirectories();
-
-const UploadPdfSchema = z.object({
-  week: z.string().min(1, "Week is required"),
-  status: z.enum(['paid', 'due'], { required_error: "Status is required" }),
-  relatedPersons: z.string().optional(), // Comma-separated names
-});
 
 export async function getPdfDocuments(): Promise<PdfDocument[]> {
+  await ensureDataDirectoryExists(); // Ensure data directory exists first
   try {
-    await ensureDirectories(); // Ensures DATA_DIR is created before trying to read
-    const data = await fs.readFile(METADATA_PATH, 'utf-8');
-    const documents = JSON.parse(data) as PdfDocument[];
-    // Ensure all documents have a status and relatedPersons, default if missing
-    return documents.map(doc => ({
-      ...doc,
-      status: doc.status || 'paid',
-      relatedPersons: doc.relatedPersons || [],
-    })).sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
+    const data = await fs.readFile(METADATA_PATH, 'utf8');
+    return JSON.parse(data) as PdfDocument[];
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      await fs.writeFile(METADATA_PATH, JSON.stringify([])); // Create empty metadata if not found
-      return [];
+      console.log('metadata.json not found. Attempting to create an empty one.');
+      try {
+        await fs.writeFile(METADATA_PATH, JSON.stringify([]));
+        console.log('Successfully created empty metadata.json.');
+        return [];
+      } catch (writeError) {
+        const errorMessage = `Failed to create metadata.json at ${METADATA_PATH} after it was not found. Please check permissions for the data directory. Original write error: ${(writeError as Error).message}`;
+        console.error(errorMessage, writeError);
+        throw new Error(errorMessage);
+      }
     }
-    console.error("Failed to read PDF metadata:", error);
-    return [];
+    const errorMessage = `Failed to read or parse metadata.json from ${METADATA_PATH}. Original error: ${(error as Error).message}`;
+    console.error(errorMessage, error);
+    throw new Error(errorMessage);
   }
 }
 
-export async function uploadPdf(prevState: any, formData: FormData): Promise<{ message: string; success: boolean; errors?: any; individualResults?: {fileName: string, success: boolean, message: string}[] }> {
-  try {
-    await ensureDirectories();
+const UploadFormSchema = z.object({
+  pdfFile: z.array(z.instanceof(File))
+    .min(1, "At least one PDF file is required.")
+    .max(20, "You can upload a maximum of 20 files at a time.")
+    .refine(files => files.every(file => file.type === "application/pdf"), "Only PDF files are allowed.")
+    .refine(files => files.every(file => file.size <= 10 * 1024 * 1024), "Each file must be 10MB or less."),
+  week: z.string().min(1, "Week selection is required."),
+  status: z.enum(['paid', 'due']),
+  relatedPersons: z.string().optional(),
+});
 
-    const validatedFields = UploadPdfSchema.safeParse({
-      week: formData.get('week'),
-      status: formData.get('status'),
-      relatedPersons: formData.get('relatedPersons'),
-    });
+export async function uploadPdf(prevState: any, formData: FormData) {
+  await ensureDataDirectoryExists();
+  await ensureUploadsDirectoryExists();
 
-    if (!validatedFields.success) {
-      return {
-        message: "Validation failed.",
-        success: false,
-        errors: validatedFields.error.flatten().fieldErrors,
-        individualResults: [] // Ensure consistent shape
-      };
-    }
+  const validatedFields = UploadFormSchema.safeParse({
+    pdfFile: formData.getAll('pdfFile'),
+    week: formData.get('week'),
+    status: formData.get('status'),
+    relatedPersons: formData.get('relatedPersons'),
+  });
 
-    const { week, status, relatedPersons: relatedPersonsString } = validatedFields.data;
-    const files = formData.getAll('pdfFile') as File[];
+  if (!validatedFields.success) {
+    return {
+      message: "Validation failed. Please check your inputs.",
+      errors: validatedFields.error.flatten().fieldErrors,
+      success: false,
+      individualResults: [],
+    };
+  }
 
-    const relatedPersonsArray = relatedPersonsString
-      ? relatedPersonsString.split(',').map(name => name.trim()).filter(name => name.length > 0)
-      : [];
+  const { pdfFile: files, week, status, relatedPersons: relatedPersonsString } = validatedFields.data;
+  const relatedPersonsArray = relatedPersonsString ? relatedPersonsString.split(',').map(p => p.trim()).filter(p => p) : [];
 
-    if (!files || files.length === 0 || files.every(f => f.size === 0)) {
-      return { message: "No files uploaded or files are empty.", success: false, errors: null, individualResults: [] };
-    }
+  let documents = await getPdfDocuments();
+  const individualResults: {fileName: string; success: boolean; message: string}[] = [];
+  let allSucceeded = true;
 
-    if (files.length > 20) {
-      return { message: "Cannot upload more than 20 files at a time.", success: false, errors: null, individualResults: [] };
-    }
+  for (const file of files) {
+    const uniqueFileName = `${uuidv4()}-${file.name}`;
+    const filePath = path.join(PDFS_DIR, uniqueFileName);
+    const publicPath = `/uploads/pdfs/${uniqueFileName}`;
 
-    const allDocuments = await getPdfDocuments();
-    const individualResults = [];
-    let allSuccessful = true;
-
-    for (const file of files) {
-      if (file.size === 0) {
-        individualResults.push({fileName: file.name, success: false, message: "File is empty."});
-        allSuccessful = false;
-        continue;
-      }
-      if (file.type !== 'application/pdf') {
-        individualResults.push({fileName: file.name, success: false, message: "Invalid file type. Only PDF is allowed."});
-        allSuccessful = false;
-        continue;
-      }
-
-      const bytes = await file.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-
-      const uniqueId = uuidv4();
-      const sanitizedOriginalName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_');
-      const fileName = `${uniqueId}-${sanitizedOriginalName}`;
-      const filePath = path.join(PDFS_DIR, fileName);
-      
+    try {
+      const buffer = Buffer.from(await file.arrayBuffer());
       await fs.writeFile(filePath, buffer);
 
       const newDocument: PdfDocument = {
-        id: uniqueId,
-        fileName,
+        id: uuidv4(),
+        fileName: uniqueFileName,
         originalName: file.name,
         week,
         status,
         uploadDate: new Date().toISOString(),
-        path: `/uploads/pdfs/${fileName}`,
+        path: publicPath,
         size: file.size,
         relatedPersons: relatedPersonsArray,
       };
-      allDocuments.unshift(newDocument);
-      individualResults.push({fileName: file.name, success: true, message: "Uploaded successfully."});
+      documents.unshift(newDocument); // Add to the beginning of the array
+      individualResults.push({ fileName: file.name, success: true, message: "Uploaded successfully." });
+    } catch (error) {
+      console.error(`Failed to upload ${file.name}:`, error);
+      individualResults.push({ fileName: file.name, success: false, message: `Upload failed: ${(error as Error).message}` });
+      allSucceeded = false;
     }
-    
-    await fs.writeFile(METADATA_PATH, JSON.stringify(allDocuments, null, 2));
+  }
+  
+  if (individualResults.length === 0) { // Should not happen if validation passes
+    return { message: "No files were processed.", success: false, errors: null, individualResults: [] };
+  }
 
+  try {
+    await fs.writeFile(METADATA_PATH, JSON.stringify(documents, null, 2));
     revalidatePath('/');
-    revalidatePath('/admin');
     revalidatePath('/admin/manage-pdfs');
 
-
-    if (files.length === 1) {
-        // For single file, ensure 'errors' is present even if null for consistency
-        return { message: individualResults[0].message, success: individualResults[0].success, errors: null, individualResults: [] };
+    if (allSucceeded) {
+      return { message: files.length > 1 ? "All files uploaded successfully!" : "File uploaded successfully!", success: true, errors: null, individualResults };
     } else {
-        return { 
-            message: allSuccessful ? "All files processed successfully!" : "Some files could not be uploaded.", 
-            success: allSuccessful, 
-            errors: null, // Ensure consistent shape
-            individualResults 
-        };
+      const successfulUploads = individualResults.filter(r => r.success).length;
+      const failedUploads = individualResults.length - successfulUploads;
+      return { 
+        message: `${successfulUploads} file(s) uploaded successfully. ${failedUploads} file(s) failed. Check details below.`, 
+        success: false, // Overall success is false if any file fails
+        errors: null, 
+        individualResults 
+      };
     }
 
   } catch (error) {
-    console.error("Upload failed:", error);
-    // Ensure the returned object shape is consistent with initialState
-    return { 
-        message: `Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 
-        success: false,
-        errors: null,
-        individualResults: [] 
-    };
+    const errorMessage = `Failed to save metadata after uploads. Some files may have been saved to disk but not recorded. Error: ${(error as Error).message}`;
+    console.error(errorMessage, error);
+    // Add results for files that were physically saved but whose metadata update failed
+     individualResults.forEach(res => {
+        if (res.success) { // If it was initially successful before metadata save fail
+            res.success = false;
+            res.message = "Uploaded, but metadata save failed.";
+        }
+    });
+    return { message: errorMessage, success: false, errors: null, individualResults };
   }
 }
 
-export async function deletePdf(id: string): Promise<{ success: boolean; message: string }> {
+
+export async function deletePdf(id: string): Promise<{ success: boolean, message: string }> {
+  await ensureDataDirectoryExists();
+  // No need to call ensureUploadsDirectoryExists here if we're only potentially deleting files
+  // However, it doesn't hurt to ensure it's there if we needed to list its contents for some reason.
+
+  let documents = await getPdfDocuments();
+  const docToDelete = documents.find(doc => doc.id === id);
+
+  if (!docToDelete) {
+    return { success: false, message: "Document not found." };
+  }
+
   try {
-    await ensureDirectories();
-    const documents = await getPdfDocuments();
-    const docToDelete = documents.find(doc => doc.id === id);
-
-    if (!docToDelete) {
-      return { success: false, message: "Document not found." };
-    }
-
-    const publicFilePath = path.join(process.cwd(), 'public', docToDelete.path);
+    // Delete the physical file
+    const filePath = path.join(PDFS_DIR, docToDelete.fileName);
     try {
-      await fs.unlink(publicFilePath);
+      await fs.unlink(filePath);
     } catch (fileError) {
-      console.error(`Failed to delete file ${publicFilePath}:`, fileError);
+        // Log if file doesn't exist, but proceed to remove metadata if it's an ENOENT
+        if ((fileError as NodeJS.ErrnoException).code === 'ENOENT') {
+            console.log(`File ${filePath} not found for deletion, but will remove metadata entry.`);
+        } else {
+            // For other errors, log a warning but still try to remove metadata.
+             console.warn(`Could not delete file ${filePath}: ${(fileError as Error).message}. It might have been already deleted or there's a permission issue. Proceeding to update metadata.`);
+        }
     }
-
-    const updatedDocuments = documents.filter(doc => doc.id !== id);
-    await fs.writeFile(METADATA_PATH, JSON.stringify(updatedDocuments, null, 2));
+    
+    // Remove from metadata
+    documents = documents.filter(doc => doc.id !== id);
+    await fs.writeFile(METADATA_PATH, JSON.stringify(documents, null, 2));
 
     revalidatePath('/');
-    revalidatePath('/admin');
     revalidatePath('/admin/manage-pdfs');
-
-    return { success: true, message: "Document deleted successfully." };
+    return { success: true, message: "PDF deleted successfully." };
   } catch (error) {
-    console.error("Failed to delete PDF:", error);
-    return { success: false, message: "Failed to delete document." };
+    console.error("Error deleting PDF:", error);
+    return { success: false, message: `Failed to delete PDF: ${(error as Error).message}` };
   }
 }
 
 export async function togglePdfStatus(id: string): Promise<{ success: boolean; message: string; newStatus?: 'paid' | 'due' }> {
+  await ensureDataDirectoryExists();
+  let documents = await getPdfDocuments();
+  const docIndex = documents.findIndex(doc => doc.id === id);
+
+  if (docIndex === -1) {
+    return { success: false, message: "Document not found." };
+  }
+
+  const newStatus = documents[docIndex].status === 'paid' ? 'due' : 'paid';
+  documents[docIndex].status = newStatus;
+
   try {
-    await ensureDirectories();
-    let documents = await getPdfDocuments();
-    const docIndex = documents.findIndex(doc => doc.id === id);
-
-    if (docIndex === -1) {
-      return { success: false, message: "Document not found." };
-    }
-
-    const currentStatus = documents[docIndex].status;
-    const newStatus = currentStatus === 'paid' ? 'due' : 'paid';
-    documents[docIndex].status = newStatus;
-
     await fs.writeFile(METADATA_PATH, JSON.stringify(documents, null, 2));
-
     revalidatePath('/');
     revalidatePath('/admin/manage-pdfs');
-    revalidatePath('/admin');
-
-
-    return { success: true, message: `Status updated to ${newStatus}.`, newStatus };
+    return { success: true, message: "Status updated successfully.", newStatus };
   } catch (error) {
-    console.error("Failed to toggle PDF status:", error);
-    return { success: false, message: "Failed to update document status." };
+    console.error("Error toggling PDF status:", error);
+    return { success: false, message: `Failed to update status: ${(error as Error).message}` };
   }
 }
 
-export async function bulkUpdatePdfStatus(ids: string[], newStatus: 'paid' | 'due'): Promise<{ success: boolean; message: string; updatedCount: number }> {
-  try {
-    await ensureDirectories();
-    let documents = await getPdfDocuments();
-    let updatedCount = 0;
+export async function bulkUpdatePdfStatus(ids: string[], newStatus: 'paid' | 'due'): Promise<{ success: boolean; message: string }> {
+  await ensureDataDirectoryExists();
+  let documents = await getPdfDocuments();
+  let updatedCount = 0;
 
-    documents = documents.map(doc => {
-      if (ids.includes(doc.id)) {
-        if (doc.status !== newStatus) {
-          doc.status = newStatus;
-          updatedCount++;
-        }
+  documents.forEach(doc => {
+    if (ids.includes(doc.id)) {
+      if (doc.status !== newStatus) {
+        doc.status = newStatus;
+        updatedCount++;
       }
-      return doc;
-    });
+    }
+  });
 
+  if (updatedCount === 0) {
+    return { success: true, message: "No documents required status updates." };
+  }
+
+  try {
     await fs.writeFile(METADATA_PATH, JSON.stringify(documents, null, 2));
-
     revalidatePath('/');
     revalidatePath('/admin/manage-pdfs');
-    revalidatePath('/admin');
-
-    if (updatedCount > 0) {
-      return { success: true, message: `${updatedCount} document(s) updated to ${newStatus}.`, updatedCount };
-    } else {
-      return { success: true, message: `No documents required an update to ${newStatus}.`, updatedCount: 0 };
-    }
+    return { success: true, message: `${updatedCount} document(s) updated to ${newStatus} successfully.` };
   } catch (error) {
-    console.error("Failed to bulk update PDF statuses:", error);
-    return { success: false, message: "Failed to bulk update document statuses.", updatedCount: 0 };
+    console.error("Error bulk updating PDF statuses:", error);
+    return { success: false, message: `Failed to bulk update statuses: ${(error as Error).message}` };
   }
 }
 
+    
